@@ -1,13 +1,12 @@
 "use client";
 import React, { useState } from "react";
-import { ChevronDown, ArrowLeft, Settings } from "lucide-react";
+import { ArrowLeft, Settings } from "lucide-react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 
 export function Withdraw() {
   const [receipientAddress, setRecipientAddress] = useState("");
   const [selectedAddress, setSelectedAddress] = useState("all");
-  const [showAddresses, setShowAddresses] = useState(false);
   const router = useRouter();
 
   // Example contract addresses
@@ -52,78 +51,26 @@ export function Withdraw() {
         <div className="space-y-4">
           <div className="mb-4">
             <div className="text-gray-400 mb-2 text-sm">Network</div>
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              type="button"
-              onClick={() => setShowAddresses(!showAddresses)}
-              className="w-full bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-xl p-4 flex items-center justify-between hover:bg-gray-800 transition-colors"
+            <select
+              title="address"
+              value={selectedAddress}
+              onChange={(e) => setSelectedAddress(e.target.value)}
+              className="w-full bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-xl p-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <div className="flex items-center space-x-3">
-                <div className="flex flex-col items-start">
-                  <span className="text-white font-medium">
-                    {selectedAddress === "all"
-                      ? "All Contracts"
-                      : "Selected Contract"}
-                  </span>
-                  <span className="text-gray-400 text-sm">
-                    {selectedAddress === "all"
-                      ? `Total: ${totalBalance} ETH`
-                      : selectedAddress}
-                  </span>
-                </div>
-              </div>
-              <ChevronDown className="w-5 h-5 text-gray-400" />
-            </motion.button>
-          </div>
-
-          {showAddresses && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-4 bg-gray-800/50 backdrop-blur-md rounded-xl border border-gray-700/50 overflow-hidden"
-            >
-              <button
-                onClick={() => {
-                  setSelectedAddress("all");
-                  setShowAddresses(false);
-                }}
-                className="w-full p-4 flex items-center justify-between hover:bg-gray-800 transition-colors border-b border-gray-700/50"
-              >
-                <div className="flex flex-col items-start">
-                  <span className="text-white font-medium">All Contracts</span>
-                  <span className="text-gray-400 text-sm">
-                    {`Total: ${totalBalance} ETH`}
-                  </span>
-                </div>
-                {selectedAddress === "all" && (
-                  <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                )}
-              </button>
+              <option value="all" className="bg-gray-800">
+                All Contracts ({totalBalance} ETH)
+              </option>
               {contractAddresses.map((contract) => (
-                <button
+                <option
                   key={contract.address}
-                  onClick={() => {
-                    setSelectedAddress(contract.address);
-                    setShowAddresses(false);
-                  }}
-                  className="w-full p-4 flex items-center justify-between hover:bg-gray-800 transition-colors border-b border-gray-700/50 last:border-none"
+                  value={contract.address}
+                  className="bg-gray-800"
                 >
-                  <div className="flex flex-col items-start">
-                    <span className="text-white font-medium">
-                      {contract.address}
-                    </span>
-                    <span className="text-gray-400 text-sm">
-                      {contract.balance}
-                    </span>
-                  </div>
-                  {selectedAddress === contract.address && (
-                    <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                  )}
-                </button>
+                  {contract.address} ({contract.balance})
+                </option>
               ))}
-            </motion.div>
-          )}
+            </select>
+          </div>
 
           <motion.div
             initial={{ opacity: 0, y: 10 }}
