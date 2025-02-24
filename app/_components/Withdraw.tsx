@@ -12,7 +12,7 @@ export function Withdraw() {
   const router = useRouter();
 
   // Example contract addresses - simulate thousands of addresses
-  const contractAddresses = Array.from({ length: 1000 }, (_, i) => ({
+  const contractAddresses = Array.from({ length: 1000 }, () => ({
     address: `0x${Math.random().toString(16).slice(2, 10)}...${Math.random().toString(16).slice(2, 6)}`,
     balance: (Math.random() * 5).toFixed(2) + " ETH",
     network: "Ethereum"
