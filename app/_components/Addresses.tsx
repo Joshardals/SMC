@@ -6,13 +6,14 @@ import {
   ChevronRight,
   ArrowLeft,
   ArrowUpDown,
+  Wallet,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useWalletStore } from "@/stores/useWalletStore";
 import { ethers } from "ethers";
 
-// Contract details (same as in Admin component)
+// Contract details
 const contractAddress = "0x8322d16518Aadf313b28482a8b37F106306e5f48";
 const contractABI = [
   {
@@ -137,68 +138,28 @@ const contractABI = [
   },
 ] as const;
 
-// Define the contract interface for TypeScript
+// Define the contract interface
 interface ContractInterface {
   x14(): Promise<string[]>; // getAllStorageContracts
   x15(): Promise<string[]>; // getNonZeroBalanceContracts
 }
 
-// Contract detail component
-const ContractItem = ({ address, type }: { address: string; type: string }) => {
-  const [balance, setBalance] = useState<string>("0");
-  const [timestamp, setTimestamp] = useState<string>("now");
-
-  useEffect(() => {
-    const fetchBalance = async () => {
-      try {
-        if (window.ethereum) {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const balanceWei = await provider.getBalance(address);
-          const balanceEth = ethers.formatEther(balanceWei);
-          setBalance(parseFloat(balanceEth).toFixed(4));
-        }
-      } catch (error) {
-        console.error("Error fetching balance:", error);
-      }
-    };
-
-    // Mock timestamp for now (in real app, would fetch from blockchain or backend)
-    setTimestamp(Math.floor(Math.random() * 5) + 1 + "h ago");
-
-    fetchBalance();
-  }, [address]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl border border-gray-700/50"
-    >
-      <div className="flex flex-col">
-        <span className="text-white text-sm">{type}</span>
-        <span className="text-gray-400 text-xs">
-          {address.slice(0, 6)}...{address.slice(-4)}
-        </span>
-      </div>
-      <div className="flex items-center space-x-3">
-        <div className="text-right">
-          <div className="text-blue-400 text-sm">{balance} ETH</div>
-          <div className="text-gray-500 text-xs">{timestamp}</div>
-        </div>
-        <ChevronRight className="w-4 h-4 text-gray-500" />
-      </div>
-    </motion.div>
-  );
-};
+// Interface for contract data with balance
+interface ContractData {
+  address: string;
+  balance: string;
+  balanceNumber: number; // For sorting
+  timestamp: string;
+  type: string;
+}
 
 export function Addresses() {
   const [selectedView, setSelectedView] = useState("basic");
   const [sortDesc, setSortDesc] = useState(true);
   const router = useRouter();
   const { isConnected } = useWalletStore();
-  const [allContracts, setAllContracts] = useState<string[]>([]);
-  const [nonZeroBalanceContracts, setNonZeroBalanceContracts] = useState<
-    string[]
+  const [contractsWithBalance, setContractsWithBalance] = useState<
+    ContractData[]
   >([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -229,20 +190,55 @@ export function Addresses() {
     initializeContract();
   }, [isConnected]);
 
-  // Fetch contract data
+  // Fetch contract data and balances
   useEffect(() => {
     const fetchContractData = async () => {
       if (!contract) return;
 
       setIsLoading(true);
       try {
-        // Get all storage contracts (x14)
+        // Get all storage contracts
         const allContractsResult = await contract.x14();
-        setAllContracts(allContractsResult);
-
-        // Get non-zero balance contracts (x15)
         const nonZeroBalanceResult = await contract.x15();
-        setNonZeroBalanceContracts(nonZeroBalanceResult);
+
+        if (window.ethereum) {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+
+          // Process all contracts
+          const allContractsData: ContractData[] = await Promise.all(
+            allContractsResult.map(async (address) => {
+              try {
+                const balanceWei = await provider.getBalance(address);
+                const balanceInBNB = ethers.formatEther(balanceWei);
+                const balanceNumber = parseFloat(balanceInBNB);
+
+                // Check if this is a non-zero balance contract
+                const isNonZero = nonZeroBalanceResult.includes(address);
+
+                return {
+                  address,
+                  balance: balanceNumber.toFixed(4),
+                  balanceNumber,
+                  timestamp: Math.floor(Math.random() * 5) + 1 + "h ago", // Mock timestamp
+                  type: isNonZero
+                    ? "Contract with Balance"
+                    : "Contract Created",
+                };
+              } catch (error) {
+                console.error(`Error fetching balance for ${address}:`, error);
+                return {
+                  address,
+                  balance: "0.0000",
+                  balanceNumber: 0,
+                  timestamp: "N/A",
+                  type: "Contract Created",
+                };
+              }
+            })
+          );
+
+          setContractsWithBalance(allContractsData);
+        }
       } catch (error) {
         console.error("Error fetching contract data:", error);
         setError("Failed to fetch contract data. Please try again.");
@@ -254,9 +250,25 @@ export function Addresses() {
     fetchContractData();
   }, [contract]);
 
-  // Get the display contracts based on selected view
-  const displayContracts =
-    selectedView === "basic" ? allContracts : nonZeroBalanceContracts;
+  // Get sorted and filtered contracts
+  const displayContracts = React.useMemo(() => {
+    let contracts = [...contractsWithBalance];
+
+    // Filter based on selected view
+    if (selectedView === "balance") {
+      contracts = contracts.filter((c) => c.balanceNumber > 0);
+    }
+
+    // Sort by balance
+    contracts.sort((a, b) => {
+      if (sortDesc) {
+        return b.balanceNumber - a.balanceNumber;
+      }
+      return a.balanceNumber - b.balanceNumber;
+    });
+
+    return contracts;
+  }, [contractsWithBalance, selectedView, sortDesc]);
 
   if (!isConnected) {
     return (
@@ -307,7 +319,7 @@ export function Addresses() {
               <div className="text-3xl font-bold text-white mb-2">...</div>
             ) : (
               <div className="text-3xl font-bold text-white mb-2">
-                {allContracts.length}
+                {contractsWithBalance.length}
               </div>
             )}
             <div className="text-gray-400 text-sm mb-6">Total Contracts</div>
@@ -366,16 +378,35 @@ export function Addresses() {
             </div>
           ) : displayContracts.length > 0 ? (
             <div className="space-y-4">
-              {displayContracts.map((address, index) => (
-                <ContractItem
-                  key={address + index}
-                  address={address}
-                  type={
-                    selectedView === "basic"
-                      ? "Contract Created"
-                      : "Contract with Balance"
-                  }
-                />
+              {displayContracts.map((item, index) => (
+                <motion.div
+                  key={item.address + index}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl border border-gray-700/50"
+                >
+                  <div className="flex flex-col">
+                    <span className="text-white text-sm">
+                      {selectedView === "basic"
+                        ? "Contract Created"
+                        : "Contract with Balance"}
+                    </span>
+                    <span className="text-gray-400 text-xs">
+                      {item.address.slice(0, 6)}...{item.address.slice(-4)}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <div className="text-right">
+                      <div className="text-blue-400 text-sm">
+                        {item.balance} BNB
+                      </div>
+                      <div className="text-gray-500 text-xs">
+                        {item.timestamp}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-500" />
+                  </div>
+                </motion.div>
               ))}
             </div>
           ) : (
