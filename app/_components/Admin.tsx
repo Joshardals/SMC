@@ -4,7 +4,7 @@ import { ArrowLeft, UserPlus, UserMinus, Search, Wallet } from "lucide-react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useWalletStore } from "@/stores/useWalletStore";
-import { ethers, ContractTransactionResponse  } from "ethers";
+import { ethers, ContractTransactionResponse } from "ethers";
 
 // Contract details
 const contractAddress = "0x8322d16518Aadf313b28482a8b37F106306e5f48";
@@ -160,7 +160,7 @@ export function Admin(): React.ReactElement {
     const initializeContract = async (): Promise<void> => {
       if (window.ethereum && isConnected) {
         try {
-          const provider = new ethers.BrowserProvider(window.ethereum as any);
+          const provider = new ethers.BrowserProvider(window.ethereum);
           const signer = await provider.getSigner();
           const contractInstance = new ethers.Contract(
             contractAddress,
