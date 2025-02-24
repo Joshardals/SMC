@@ -1,16 +1,10 @@
 "use client";
-import React, { useState, useEffect, useMemo } from "react";
-import {
-  ChevronDown,
-  ArrowLeft,
-  Search,
-  Wallet,
-  Loader2,
-} from "lucide-react";
+import React, { useState, useMemo, useEffect } from "react";
+import { ChevronDown, ArrowLeft, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ethers } from "ethers";
 import { useWalletStore } from "@/stores/useWalletStore";
+import { ethers, ContractTransactionResponse } from "ethers";
 
 // Contract details
 const contractAddress = "0x8322d16518Aadf313b28482a8b37F106306e5f48";
@@ -137,38 +131,43 @@ const contractABI = [
   },
 ] as const;
 
-// Define the contract interface for TypeScript
+// Define the contract interface
 interface ContractInterface {
+  x14(): Promise<string[]>; // getAllStorageContracts
+  x15(): Promise<string[]>; // getNonZeroBalanceContracts
   x21(
-    contractAddr: string,
-    recipientAddr: string
-  ): Promise<ethers.ContractTransactionResponse>;
-  x24(recipientAddr: string): Promise<ethers.ContractTransactionResponse>;
-  x14(): Promise<string[]>;
-  x15(): Promise<string[]>;
+    contractAddress: string,
+    recipientAddress: string
+  ): Promise<ContractTransactionResponse>; // withdrawFromContract
+  x24(recipientAddress: string): Promise<ContractTransactionResponse>; // withdrawFromAllContracts
 }
 
+// Interface for contract data with balance
 interface ContractData {
   address: string;
   balance: string;
+  balanceNumber: number; // For sorting
 }
 
 export function Withdraw() {
+  const [recipientAddress, setRecipientAddress] = useState("");
+  const [selectedAddress, setSelectedAddress] = useState("all");
+  const [showAddresses, setShowAddresses] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
-  const { address: connectedAddress, isConnected } = useWalletStore();
-  const [recipientAddress, setRecipientAddress] = useState<string>("");
-  const [selectedAddress, setSelectedAddress] = useState<string>("all");
-  const [showAddresses, setShowAddresses] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [contractList, setContractList] = useState<ContractData[]>([]);
-  const [isLoadingContracts, setIsLoadingContracts] = useState<boolean>(false);
-  const [isWithdrawing, setIsWithdrawing] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<string>("");
+  const { isConnected } = useWalletStore();
   const [contract, setContract] = useState<
     (ethers.Contract & ContractInterface) | null
   >(null);
+  const [contractsWithBalance, setContractsWithBalance] = useState<
+    ContractData[]
+  >([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  // Initialize contract when the component mounts
+  // Initialize contract
   useEffect(() => {
     const initializeContract = async (): Promise<void> => {
       if (window.ethereum && isConnected) {
@@ -183,7 +182,7 @@ export function Withdraw() {
           setContract(contractInstance);
         } catch (error) {
           console.error("Error initializing contract:", error);
-          setStatusMessage("Failed to initialize contract. Please try again.");
+          setError("Failed to initialize contract. Please try again.");
         }
       }
     };
@@ -191,139 +190,172 @@ export function Withdraw() {
     initializeContract();
   }, [isConnected]);
 
-  // Fetch the list of contracts with balances
+  // Fetch contract data and balances
   useEffect(() => {
-    const fetchContracts = async () => {
+    const fetchContractData = async () => {
       if (!contract) return;
 
-      setIsLoadingContracts(true);
-      setStatusMessage("Loading contracts...");
-
+      setIsLoading(true);
       try {
-        // Get all contracts that have a non-zero balance
-        const nonZeroBalanceContracts = await contract.x15();
+        // Get all storage contracts
+        const allContractsResult = await contract.x14();
 
-        // For this example, we'll use the fetched contract addresses but simulate balances
-        // In a real implementation, you would query each contract's balance
-        const contractsWithBalance = await Promise.all(
-          nonZeroBalanceContracts.map(async (address) => {
-            // In a real app, you would get the actual balance
-            // This is a placeholder simulation
-            const randomBalance = (Math.random() * 5).toFixed(2);
+        if (window.ethereum) {
+          const provider = new ethers.BrowserProvider(window.ethereum);
 
-            return {
-              address: address,
-              balance: `${randomBalance} ETH`,
-            };
-          })
-        );
+          // Process all contracts
+          const allContractsData: ContractData[] = await Promise.all(
+            allContractsResult.map(async (address) => {
+              try {
+                const balanceWei = await provider.getBalance(address);
+                const balanceInBNB = ethers.formatEther(balanceWei);
+                const balanceNumber = parseFloat(balanceInBNB);
 
-        setContractList(contractsWithBalance);
-        setStatusMessage("");
+                return {
+                  address,
+                  balance: balanceNumber.toFixed(4),
+                  balanceNumber,
+                };
+              } catch (error) {
+                console.error(`Error fetching balance for ${address}:`, error);
+                return {
+                  address,
+                  balance: "0.0000",
+                  balanceNumber: 0,
+                };
+              }
+            })
+          );
+
+          // Filter out zero balance contracts
+          const contractsWithNonZeroBalance = allContractsData.filter(
+            (contract) => contract.balanceNumber > 0
+          );
+
+          setContractsWithBalance(contractsWithNonZeroBalance);
+        }
       } catch (error) {
-        console.error("Error fetching contracts:", error);
-        setStatusMessage("Failed to load contracts. Please try again.");
+        console.error("Error fetching contract data:", error);
+        setError("Failed to fetch contract data. Please try again.");
       } finally {
-        setIsLoadingContracts(false);
+        setIsLoading(false);
       }
     };
 
-    fetchContracts();
+    fetchContractData();
   }, [contract]);
 
-  // Calculate the total balance from all contracts
+  // Calculate total balance
   const totalBalance = useMemo(() => {
-    return contractList
-      .reduce((sum, contract) => {
-        const balanceValue = parseFloat(contract.balance.split(" ")[0]);
-        return sum + (isNaN(balanceValue) ? 0 : balanceValue);
-      }, 0)
-      .toFixed(2);
-  }, [contractList]);
+    return contractsWithBalance
+      .reduce((sum, contract) => sum + contract.balanceNumber, 0)
+      .toFixed(4);
+  }, [contractsWithBalance]);
 
-  // Filter contracts based on search query
+  // Filter addresses based on search query
   const filteredAddresses = useMemo(() => {
-    return contractList.filter((contract) =>
+    return contractsWithBalance.filter((contract) =>
       contract.address.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [contractList, searchQuery]);
+  }, [contractsWithBalance, searchQuery]);
 
-  // Withdraw from a specific contract
-  const withdrawFromSpecificContract = async () => {
-    if (!contract || !recipientAddress) {
-      setStatusMessage("Please enter a recipient address");
-      return;
-    }
+  // Get the selected contract object
+  const selectedContract = useMemo(() => {
+    if (selectedAddress === "all") return null;
+    return contractsWithBalance.find((c) => c.address === selectedAddress);
+  }, [selectedAddress, contractsWithBalance]);
 
-    if (selectedAddress === "all") {
-      setStatusMessage("Please select a specific contract");
-      return;
-    }
-
-    setIsWithdrawing(true);
-    setStatusMessage(
-      `Withdrawing from contract ${selectedAddress.slice(
-        0,
-        6
-      )}...${selectedAddress.slice(-4)}...`
-    );
-
-    try {
-      // Call the withdrawFromContract function (x21)
-      const tx = await contract.x21(selectedAddress, recipientAddress);
-      await tx.wait();
-      setStatusMessage(
-        `Successfully withdrawn from contract to ${recipientAddress.slice(
-          0,
-          6
-        )}...${recipientAddress.slice(-4)}`
-      );
-    } catch (error) {
-      console.error("Error withdrawing from contract:", error);
-      setStatusMessage(
-        "Failed to withdraw. Check your permissions and try again."
-      );
-    } finally {
-      setIsWithdrawing(false);
-    }
-  };
-
-  // Withdraw from all contracts
-  const withdrawFromAllContracts = async () => {
-    if (!contract || !recipientAddress) {
-      setStatusMessage("Please enter a recipient address");
-      return;
-    }
-
-    setIsWithdrawing(true);
-    setStatusMessage("Withdrawing from all contracts...");
-
-    try {
-      // Call the withdrawFromAllContracts function (x24)
-      const tx = await contract.x24(recipientAddress);
-      await tx.wait();
-      setStatusMessage(
-        `Successfully withdrawn from all contracts to ${recipientAddress.slice(
-          0,
-          6
-        )}...${recipientAddress.slice(-4)}`
-      );
-    } catch (error) {
-      console.error("Error withdrawing from all contracts:", error);
-      setStatusMessage(
-        "Failed to withdraw. Check your permissions and try again."
-      );
-    } finally {
-      setIsWithdrawing(false);
-    }
-  };
-
-  // Handle the withdraw action based on the selected option
+  // Handle withdraw function
   const handleWithdraw = async () => {
-    if (selectedAddress === "all") {
-      await withdrawFromAllContracts();
-    } else {
-      await withdrawFromSpecificContract();
+    if (!contract || !recipientAddress) {
+      setError("Please provide a recipient address");
+      return;
+    }
+
+    if (!ethers.isAddress(recipientAddress)) {
+      setError("Invalid recipient address");
+      return;
+    }
+
+    setIsWithdrawing(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      let tx;
+
+      if (selectedAddress === "all") {
+        // Withdraw from all contracts
+        tx = await contract.x24(recipientAddress);
+      } else {
+        // Withdraw from specific contract
+        tx = await contract.x21(selectedAddress, recipientAddress);
+      }
+
+      await tx.wait();
+
+      setSuccess(
+        selectedAddress === "all"
+          ? "Successfully withdrew from all contracts!"
+          : `Successfully withdrew from contract ${selectedAddress.slice(
+              0,
+              6
+            )}...${selectedAddress.slice(-4)}`
+      );
+
+      // Refresh contract data after withdrawal
+      const fetchContractData = async () => {
+        if (!contract) return;
+
+        try {
+          const allContractsResult = await contract.x14();
+
+          if (window.ethereum) {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+
+            const allContractsData: ContractData[] = await Promise.all(
+              allContractsResult.map(async (address) => {
+                try {
+                  const balanceWei = await provider.getBalance(address);
+                  const balanceInBNB = ethers.formatEther(balanceWei);
+                  const balanceNumber = parseFloat(balanceInBNB);
+
+                  return {
+                    address,
+                    balance: balanceNumber.toFixed(4),
+                    balanceNumber,
+                  };
+                } catch (error) {
+                  console.error(
+                    `Error fetching balance for ${address}:`,
+                    error
+                  );
+                  return {
+                    address,
+                    balance: "0.0000",
+                    balanceNumber: 0,
+                  };
+                }
+              })
+            );
+
+            const contractsWithNonZeroBalance = allContractsData.filter(
+              (contract) => contract.balanceNumber > 0
+            );
+
+            setContractsWithBalance(contractsWithNonZeroBalance);
+          }
+        } catch (error) {
+          console.error("Error refreshing contract data:", error);
+        }
+      };
+
+      fetchContractData();
+    } catch (error) {
+      console.error("Error during withdrawal:", error);
+      setError("Transaction failed. Please try again.");
+    } finally {
+      setIsWithdrawing(false);
     }
   };
 
@@ -331,7 +363,7 @@ export function Withdraw() {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black p-4 flex items-center justify-center">
         <div className="text-white text-center">
-          <p>Please connect your wallet to access withdraw features</p>
+          <p>Please connect your wallet to use the withdrawal feature</p>
           <button
             onClick={() => router.push("/")}
             className="mt-4 bg-blue-600 px-4 py-2 rounded-xl hover:bg-blue-700 transition-colors"
@@ -355,66 +387,45 @@ export function Withdraw() {
             title="go back"
             type="button"
             className="p-2 hover:bg-gray-800/50 rounded-xl transition-colors"
-            onClick={() => router.back()}
+            onClick={() => router.push("/")}
           >
             <ArrowLeft className="w-6 h-6 text-gray-400" />
           </button>
           <div className="flex items-center space-x-3">
             <h1 className="text-xl text-white font-medium">Withdraw</h1>
           </div>
-          <div className="w-10" />
+          <div className="w-10"></div>
         </div>
-
-        {/* Connected Wallet Display */}
-        <motion.div
-          className="bg-gray-800/30 backdrop-blur-lg rounded-3xl p-4 mb-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          <div className="flex items-center space-x-3">
-            <Wallet className="w-5 h-5 text-green-500" />
-            <span className="text-gray-400 text-sm">Connected:</span>
-            <span className="text-white text-sm truncate">
-              {connectedAddress}
-            </span>
-          </div>
-        </motion.div>
-
-        {/* Status Message Display */}
-        {statusMessage && (
-          <motion.div
-            className={`bg-gray-800/50 backdrop-blur-lg rounded-3xl p-4 mb-6 text-sm ${
-              statusMessage.includes("Failed")
-                ? "text-red-400"
-                : statusMessage.includes("Success")
-                ? "text-green-400"
-                : "text-gray-300"
-            }`}
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-          >
-            {statusMessage}
-          </motion.div>
-        )}
 
         <div className="space-y-4">
           <div className="mb-4">
-            <div className="text-gray-400 mb-2 text-sm">
-              Contract to Withdraw From
-            </div>
+            <div className="text-gray-400 mb-2 text-sm">Contract</div>
             <motion.button
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               type="button"
               onClick={() => setShowAddresses(!showAddresses)}
               className="w-full bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-xl p-4 flex items-center justify-between hover:bg-gray-800 transition-colors"
-              disabled={isLoadingContracts || isWithdrawing}
+              disabled={isLoading || contractsWithBalance.length === 0}
             >
-              {isLoadingContracts ? (
+              {isLoading ? (
                 <div className="flex items-center space-x-3">
-                  <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-                  <span className="text-gray-400">Loading contracts...</span>
+                  <div className="flex flex-col items-start">
+                    <span className="text-white font-medium">
+                      Loading contracts...
+                    </span>
+                  </div>
+                </div>
+              ) : contractsWithBalance.length === 0 ? (
+                <div className="flex items-center space-x-3">
+                  <div className="flex flex-col items-start">
+                    <span className="text-white font-medium">
+                      No contracts with balance
+                    </span>
+                    <span className="text-gray-400 text-sm">
+                      Total: 0.0000 BNB
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center space-x-3">
@@ -422,12 +433,17 @@ export function Withdraw() {
                     <span className="text-white font-medium">
                       {selectedAddress === "all"
                         ? "All Contracts"
-                        : "Selected Contract"}
+                        : `Contract ${selectedAddress.slice(
+                            0,
+                            6
+                          )}...${selectedAddress.slice(-4)}`}
                     </span>
-                    <span className="text-gray-400 text-sm truncate max-w-[200px]">
+                    <span className="text-gray-400 text-sm">
                       {selectedAddress === "all"
-                        ? `Total: ${totalBalance} ETH`
-                        : selectedAddress}
+                        ? `Total: ${totalBalance} BNB`
+                        : selectedContract
+                        ? `Balance: ${selectedContract.balance} BNB`
+                        : "0.0000 BNB"}
                     </span>
                   </div>
                 </div>
@@ -481,7 +497,7 @@ export function Withdraw() {
                           All Contracts
                         </span>
                         <span className="text-gray-400 text-sm">
-                          {`Total: ${totalBalance} ETH`}
+                          {`Total: ${totalBalance} BNB`}
                         </span>
                       </div>
                       {selectedAddress === "all" && (
@@ -489,43 +505,33 @@ export function Withdraw() {
                       )}
                     </button>
 
-                    {isLoadingContracts ? (
-                      <div className="flex justify-center items-center p-8">
-                        <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-                        <span className="ml-2 text-gray-400">
-                          Loading contracts...
-                        </span>
-                      </div>
-                    ) : filteredAddresses.length === 0 ? (
-                      <div className="text-center p-6 text-gray-400">
-                        No contracts found
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {filteredAddresses.map((contract) => (
-                          <button
-                            key={contract.address}
-                            onClick={() => {
-                              setSelectedAddress(contract.address);
-                              setShowAddresses(false);
-                            }}
-                            className="w-full p-4 flex items-center justify-between hover:bg-gray-800/50 transition-colors rounded-xl"
-                          >
-                            <div className="flex flex-col items-start">
-                              <span className="text-white font-medium truncate max-w-[280px]">
-                                {contract.address}
-                              </span>
-                              <span className="text-gray-400 text-sm">
-                                {contract.balance}
-                              </span>
-                            </div>
-                            {selectedAddress === contract.address && (
-                              <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <div className="space-y-2">
+                      {filteredAddresses.map((contract) => (
+                        <button
+                          key={contract.address}
+                          onClick={() => {
+                            setSelectedAddress(contract.address);
+                            setShowAddresses(false);
+                          }}
+                          className="w-full p-4 flex items-center justify-between hover:bg-gray-800/50 transition-colors rounded-xl"
+                        >
+                          <div className="flex flex-col items-start">
+                            <span className="text-white font-medium">
+                              {`${contract.address.slice(
+                                0,
+                                10
+                              )}...${contract.address.slice(-8)}`}
+                            </span>
+                            <span className="text-gray-400 text-sm">
+                              {`${contract.balance} BNB`}
+                            </span>
+                          </div>
+                          {selectedAddress === contract.address && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -544,30 +550,54 @@ export function Withdraw() {
               placeholder="Enter recipient address"
               value={recipientAddress}
               onChange={(e) => setRecipientAddress(e.target.value)}
-              disabled={isWithdrawing}
             />
           </motion.div>
+
+          {error && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-red-500/20 text-red-400 p-3 rounded-xl"
+            >
+              {error}
+            </motion.div>
+          )}
+
+          {success && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-green-500/20 text-green-400 p-3 rounded-xl"
+            >
+              {success}
+            </motion.div>
+          )}
 
           <motion.button
             whileHover={{ scale: 1.01 }}
             whileTap={{ scale: 0.99 }}
             type="button"
-            className="w-full bg-blue-600 text-white rounded-xl py-4 mt-8 font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed flex items-center justify-center"
+            className={`w-full text-white rounded-xl py-4 mt-8 font-medium transition-colors ${
+              isWithdrawing ||
+              !recipientAddress ||
+              contractsWithBalance.length === 0
+                ? "bg-blue-600/50 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700"
+            }`}
             onClick={handleWithdraw}
-            disabled={!recipientAddress || isWithdrawing || isLoadingContracts}
+            disabled={
+              isWithdrawing ||
+              !recipientAddress ||
+              contractsWithBalance.length === 0
+            }
           >
             {isWithdrawing ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Withdrawing...
-              </>
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white mr-2"></div>
+                <span>Processing...</span>
+              </div>
             ) : (
-              <>
-                Withdraw{" "}
-                {selectedAddress === "all"
-                  ? "from All Contracts"
-                  : "from Selected Contract"}
-              </>
+              "Withdraw"
             )}
           </motion.button>
         </div>
