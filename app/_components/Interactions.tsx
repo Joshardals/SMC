@@ -1,5 +1,4 @@
 "use client";
-import React, { useState } from "react";
 import { ArrowLeft, Settings, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
