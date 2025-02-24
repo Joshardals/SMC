@@ -25,15 +25,15 @@ export function Withdraw() {
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black p-4">
       <motion.div
         className="max-w-md mx-auto"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
       >
         <div className="flex items-center justify-between mb-6">
           <button
             title="go back"
             type="button"
             className="p-2 hover:bg-gray-800/50 rounded-xl transition-colors"
-            onClick={() => router.back()}
+            onClick={() => router.push("/")}
           >
             <ArrowLeft className="w-6 h-6 text-gray-400" />
           </button>
@@ -43,7 +43,7 @@ export function Withdraw() {
           <button
             title="settings"
             type="button"
-            className="p-2 hover:bg-gray-800/50 rounded-xl transition-colors"
+            className="p-2 hover:bg-gray-800/50 rounded-xl transition-colors invisible"
           >
             <Settings className="w-6 h-6 text-gray-400" />
           </button>
