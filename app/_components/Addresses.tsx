@@ -6,7 +6,6 @@ import {
   ChevronRight,
   ArrowLeft,
   ArrowUpDown,
-  Wallet,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
