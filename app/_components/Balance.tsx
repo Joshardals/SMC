@@ -142,6 +142,7 @@ export function Balance() {
   const [error, setError] = useState<string | null>(null);
   const [totalBalance, setTotalBalance] = useState("0.00");
   const [refreshing, setRefreshing] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const { isConnected } = useWalletStore();
 
   // Function to fetch BNB price
@@ -152,10 +153,11 @@ export function Balance() {
       );
       if (!response.ok) throw new Error("Failed to fetch BNB price");
       const data = await response.json();
+      console.log("BNB Price data:", data);
       setBnbPrice(data.binancecoin.usd);
     } catch (err) {
+      console.error("BNB Price fetch error:", err);
       setError("Failed to load price");
-      console.error(err);
     }
   };
 
@@ -177,30 +179,61 @@ export function Balance() {
 
       // Get all storage contracts
       const allContractsResult = await contract.x14();
+      console.log("Retrieved contracts:", allContractsResult);
 
-      // Calculate total balance
-      let total = 0;
-      for (const address of allContractsResult) {
-        const balanceWei = await provider.getBalance(address);
-        const balanceInBNB = parseFloat(ethers.formatEther(balanceWei));
-        total += balanceInBNB;
+      if (!allContractsResult || allContractsResult.length === 0) {
+        console.log("No contracts returned from x14()");
+        setTotalBalance("0.00");
+        return;
       }
 
+      // Use Promise.all for better performance when fetching balances
+      const balancePromises = allContractsResult.map(async (address) => {
+        try {
+          const balanceWei = await provider.getBalance(address);
+          const balanceInBNB = parseFloat(ethers.formatEther(balanceWei));
+          console.log(`Address ${address}: ${balanceInBNB} BNB`);
+          return balanceInBNB;
+        } catch (e) {
+          console.error(`Error getting balance for ${address}:`, e);
+          return 0;
+        }
+      });
+
+      const balances = await Promise.all(balancePromises);
+      
+      // Calculate total
+      const total = balances.reduce((sum, balance) => sum + balance, 0);
+      
+      console.log("Individual balances:", balances);
+      console.log("Total balance calculated:", total);
+      
       setTotalBalance(total.toFixed(8));
+      
+      // Set some debug info
+      setDebugInfo(`Found ${allContractsResult.length} contracts with a total of ${total.toFixed(8)} BNB`);
     } catch (err) {
       console.error("Error fetching contract balances:", err);
       setError("Failed to load balances");
+      setDebugInfo(err instanceof Error ? err.message : String(err));
     }
   };
 
-  // Refresh all data
+  // Refresh all data sequentially to avoid race conditions
   const refreshAll = async () => {
     setRefreshing(true);
     setIsLoading(true);
     setError(null);
+    setDebugInfo(null);
 
     try {
-      await Promise.all([fetchBnbPrice(), fetchContractBalances()]);
+      // Fetch price first
+      await fetchBnbPrice();
+      // Then fetch balances
+      await fetchContractBalances();
+    } catch (err) {
+      console.error("Refresh error:", err);
+      setError("Refresh failed");
     } finally {
       setIsLoading(false);
       setRefreshing(false);
@@ -209,7 +242,9 @@ export function Balance() {
 
   // Initial load
   useEffect(() => {
-    refreshAll();
+    if (isConnected) {
+      refreshAll();
+    }
   }, [isConnected]);
 
   const formatUSD = (value: number) => {
@@ -233,7 +268,7 @@ export function Balance() {
   const formattedBNB = formatBNB(totalBalance);
 
   return (
-    <div className="flex justify-between items-center mb-6 px-4">
+    <div className="flex flex-col justify-between items-center mb-6 px-4">
       <div>
         <h2 className="text-gray-400 text-sm mb-1">Total Balance</h2>
         <button
@@ -262,19 +297,26 @@ export function Balance() {
             1 BNB = {formatUSD(bnbPrice)}
           </p>
         )}
+        {debugInfo && (
+          <p className="text-xs text-blue-400 mt-1 bg-blue-900/20 p-1 rounded">
+            {debugInfo}
+          </p>
+        )}
       </div>
-      <button
-        title="refresh balance"
-        className="p-2 hover:bg-gray-800/50 rounded-xl transition-colors"
-        onClick={refreshAll}
-        disabled={refreshing}
-      >
-        <RotateCw
-          className={`w-5 h-5 text-gray-400 ${
-            refreshing ? "animate-spin" : ""
-          }`}
-        />
-      </button>
+      <div className="mt-3 flex items-center justify-center">
+        <button
+          title="refresh balance"
+          className="p-2 hover:bg-gray-800/50 rounded-xl transition-colors"
+          onClick={refreshAll}
+          disabled={refreshing}
+        >
+          <RotateCw
+            className={`w-5 h-5 text-gray-400 ${
+              refreshing ? "animate-spin" : ""
+            }`}
+          />
+        </button>
+      </div>
     </div>
   );
 }
