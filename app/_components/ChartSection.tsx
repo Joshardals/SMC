@@ -185,7 +185,6 @@ export function ChartSection() {
     Array<{ time: number; value: number }>
   >([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const { isConnected } = useWalletStore();
 
   // Function to fetch contract balances
@@ -196,7 +195,7 @@ export function ChartSection() {
     }
 
     setIsLoading(true);
-    setError(null);
+  
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -239,7 +238,6 @@ export function ChartSection() {
       updateBalanceHistory(total, currentTime);
     } catch (err) {
       console.error("Error fetching contract balances:", err);
-      setError("Failed to load balances");
     } finally {
       setIsLoading(false);
     }
