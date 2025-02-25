@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { Users, FileCode2, Wallet, History, LucideIcon } from "lucide-react";
+import { Users, FileCode2, Wallet, LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface ActionButtonProps {
@@ -36,10 +36,6 @@ export function ActionsGrid() {
     router.push("/admin");
   };
 
-  const handleInteractions = () => {
-    router.push("/interactions");
-  };
-
   return (
     <div className="grid grid-cols-2 gap-3 px-4">
       <ActionButton icon={Users} label="Admins" onClick={handleAdmin} />
@@ -49,11 +45,6 @@ export function ActionsGrid() {
         onClick={handleAddress}
       />
       <ActionButton icon={Wallet} label="Withdraw" onClick={handleWithdraw} />
-      <ActionButton
-        icon={History}
-        label="Interactions"
-        onClick={handleInteractions}
-      />
     </div>
   );
 }
