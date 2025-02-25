@@ -1,6 +1,6 @@
 import { ActionsGrid } from "./_components/ActionsGrid";
 import { Balance } from "./_components/Balance";
-import { ChartSection } from "./_components/ChartSection";
+// import { ChartSection } from "./_components/ChartSection";
 import { ConnectWallet } from "./_components/ConnectWallet";
 
 export default function Home() {
@@ -9,7 +9,7 @@ export default function Home() {
       <div className="max-w-md mx-auto pb-4">
         <ConnectWallet />
         <Balance />
-        <ChartSection />
+        {/* <ChartSection /> */}
         <div className="mt-8">
           <ActionsGrid />
         </div>
